@@ -205,9 +205,12 @@
             font-family: inherit;
             z-index: 2000;
             display: none;
-            min-width: 100px;
+            min-width: 80px;
+            max-width: 200px;
             outline: none;
             box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            text-align: center;
+            transform: translate(-50%, -50%);
         }
 
         #inline-editor:focus {
@@ -671,6 +674,25 @@
                     };
                     contextMenu.appendChild(item);
                 });
+
+                // Add separator
+                const separator = document.createElement('div');
+                separator.className = 'context-menu-header';
+                separator.textContent = 'Actions';
+                contextMenu.appendChild(separator);
+
+                // Add delete option
+                const deleteItem = document.createElement('div');
+                deleteItem.className = 'context-menu-item';
+                deleteItem.textContent = '🗑 Delete Node';
+                deleteItem.style.color = '#e74c3c';
+                deleteItem.onclick = () => {
+                    cy.remove(target);
+                    hideInfoPanel();
+                    hideContextMenu();
+                };
+                contextMenu.appendChild(deleteItem);
+
             } else if (target.isEdge()) {
                 // Edge context menu
                 const header = document.createElement('div');
@@ -689,6 +711,24 @@
                     };
                     contextMenu.appendChild(item);
                 });
+
+                // Add separator
+                const separator = document.createElement('div');
+                separator.className = 'context-menu-header';
+                separator.textContent = 'Actions';
+                contextMenu.appendChild(separator);
+
+                // Add delete option
+                const deleteItem = document.createElement('div');
+                deleteItem.className = 'context-menu-item';
+                deleteItem.textContent = '🗑 Delete Edge';
+                deleteItem.style.color = '#e74c3c';
+                deleteItem.onclick = () => {
+                    cy.remove(target);
+                    hideInfoPanel();
+                    hideContextMenu();
+                };
+                contextMenu.appendChild(deleteItem);
             }
 
             contextMenu.style.left = x + 'px';
@@ -848,12 +888,26 @@
             editingElement = element;
             const currentLabel = element.data('label');
 
-            // Position the inline editor
-            const renderedPosition = element.renderedPosition ? element.renderedPosition() : element.renderedMidpoint();
-            inlineEditor.style.left = (renderedPosition.x - 50) + 'px';
-            inlineEditor.style.top = (renderedPosition.y - 15) + 'px';
+            // Position the inline editor exactly at the center of the element
+            let renderedPosition;
+            if (element.isNode()) {
+                renderedPosition = element.renderedPosition();
+            } else if (element.isEdge()) {
+                renderedPosition = element.renderedMidpoint();
+            }
+
+            // Center the input using transform: translate(-50%, -50%)
+            inlineEditor.style.left = renderedPosition.x + 'px';
+            inlineEditor.style.top = renderedPosition.y + 'px';
             inlineEditor.style.display = 'block';
             inlineEditor.value = currentLabel;
+
+            // Set width based on content
+            const textLength = currentLabel.length;
+            const minWidth = 80;
+            const estimatedWidth = Math.max(minWidth, textLength * 8 + 20);
+            inlineEditor.style.width = Math.min(estimatedWidth, 200) + 'px';
+
             inlineEditor.focus();
             inlineEditor.select();
 
@@ -1328,6 +1382,7 @@
 
             // Delete key - Delete selected
             if (event.key === 'Delete' || event.key === 'Backspace') {
+                event.preventDefault();
                 deleteSelected();
             }
 
