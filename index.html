@@ -102,6 +102,97 @@
         .mode-indicator.edge-mode {
             background: rgba(241, 196, 15, 0.9);
         }
+
+        .context-menu {
+            position: absolute;
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            z-index: 1000;
+            min-width: 150px;
+            display: none;
+        }
+
+        .context-menu.active {
+            display: block;
+        }
+
+        .context-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+            border-bottom: 1px solid #ecf0f1;
+        }
+
+        .context-menu-item:last-child {
+            border-bottom: none;
+        }
+
+        .context-menu-item:hover {
+            background: #ecf0f1;
+        }
+
+        .context-menu-header {
+            padding: 8px 12px;
+            font-weight: bold;
+            font-size: 12px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #bdc3c7;
+            color: #555;
+        }
+
+        #legend {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+            font-size: 12px;
+        }
+
+        #legend h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 14px;
+            color: #2c3e50;
+        }
+
+        .legend-section {
+            margin-bottom: 0.75rem;
+        }
+
+        .legend-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+            gap: 8px;
+        }
+
+        .legend-shape {
+            width: 30px;
+            height: 20px;
+            display: inline-block;
+            border: 2px solid;
+        }
+
+        .legend-line {
+            width: 40px;
+            height: 2px;
+            display: inline-block;
+        }
+
+        .legend-label {
+            font-size: 11px;
+            color: #555;
+        }
     </style>
 </head>
 <body>
@@ -119,23 +210,113 @@
     <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
         <div id="mode-indicator" class="mode-indicator"></div>
         <div id="cy"></div>
+        <div id="context-menu" class="context-menu"></div>
+        <div id="legend">
+            <h3>Legend</h3>
+            <div class="legend-section">
+                <strong style="font-size: 11px; color: #555;">Node Types (Keys 1-5)</strong>
+                <div id="node-legend"></div>
+            </div>
+            <div class="legend-section">
+                <strong style="font-size: 11px; color: #555;">Edge Types (Key T to cycle)</strong>
+                <div id="edge-legend"></div>
+            </div>
+        </div>
     </div>
 
     <div id="instructions">
-        <strong>Node Operations:</strong> Click empty space or press 'N' to add node | Click to select | Double-click to edit label | Delete key to remove |
-        <strong>Edge Operations:</strong> Select node + press 'E' + click target to add edge | Double-click edge to edit label | Delete key to remove edge
+        <strong>Node Operations:</strong> Click empty space or press 'N' to add node | Click to select | Double-click to edit label | Delete key to remove | Press 1-5 to change type |
+        <strong>Edge Operations:</strong> Select node + press 'E' + click target to add edge | Double-click edge to edit label | Press T to cycle type | Delete key to remove edge |
+        <strong>Context Menu:</strong> Right-click node or edge to change type
     </div>
 
     <script>
+        // Type definitions - centralized configuration for node and edge types
+        const NODE_TYPES = {
+            concept: {
+                label: 'Concept',
+                shape: 'ellipse',
+                color: '#3498db',
+                borderColor: '#2980b9'
+            },
+            claim: {
+                label: 'Claim',
+                shape: 'round-rectangle',
+                color: '#2ecc71',
+                borderColor: '#27ae60'
+            },
+            evidence: {
+                label: 'Evidence',
+                shape: 'diamond',
+                color: '#e67e22',
+                borderColor: '#d35400'
+            },
+            method: {
+                label: 'Method',
+                shape: 'hexagon',
+                color: '#9b59b6',
+                borderColor: '#8e44ad'
+            },
+            result: {
+                label: 'Result',
+                shape: 'rectangle',
+                color: '#f1c40f',
+                borderColor: '#f39c12'
+            }
+        };
+
+        const EDGE_TYPES = {
+            supports: {
+                label: 'supports',
+                color: '#2ecc71',
+                lineStyle: 'solid',
+                width: 2
+            },
+            contradicts: {
+                label: 'contradicts',
+                color: '#e74c3c',
+                lineStyle: 'solid',
+                width: 2
+            },
+            derives_from: {
+                label: 'derives from',
+                color: '#3498db',
+                lineStyle: 'dashed',
+                width: 2
+            },
+            requires: {
+                label: 'requires',
+                color: '#95a5a6',
+                lineStyle: 'dotted',
+                width: 2
+            },
+            measures: {
+                label: 'measures',
+                color: '#9b59b6',
+                lineStyle: 'solid',
+                width: 2
+            },
+            uses: {
+                label: 'uses',
+                color: '#8b4513',
+                lineStyle: 'solid',
+                width: 2
+            }
+        };
+
+        // Helper to get node type keys in order
+        const NODE_TYPE_KEYS = Object.keys(NODE_TYPES);
+        const EDGE_TYPE_KEYS = Object.keys(EDGE_TYPES);
+
         // Initialize Cytoscape
         const cy = cytoscape({
             container: document.getElementById('cy'),
 
             style: [
+                // Base node style
                 {
                     selector: 'node',
                     style: {
-                        'background-color': '#3498db',
                         'label': 'data(label)',
                         'color': '#2c3e50',
                         'text-valign': 'center',
@@ -144,40 +325,68 @@
                         'width': '60px',
                         'height': '60px',
                         'border-width': '2px',
-                        'border-color': '#2980b9',
                         'text-wrap': 'wrap',
-                        'text-max-width': '80px'
+                        'text-max-width': '80px',
+                        // Dynamic styling based on type
+                        'shape': function(ele) {
+                            const type = ele.data('type') || 'concept';
+                            return NODE_TYPES[type]?.shape || 'ellipse';
+                        },
+                        'background-color': function(ele) {
+                            const type = ele.data('type') || 'concept';
+                            return NODE_TYPES[type]?.color || '#3498db';
+                        },
+                        'border-color': function(ele) {
+                            const type = ele.data('type') || 'concept';
+                            return NODE_TYPES[type]?.borderColor || '#2980b9';
+                        }
                     }
                 },
                 {
                     selector: 'node:selected',
                     style: {
-                        'background-color': '#e74c3c',
                         'border-color': '#c0392b',
-                        'border-width': '3px'
+                        'border-width': '3px',
+                        'overlay-opacity': 0.2,
+                        'overlay-color': '#e74c3c'
                     }
                 },
+                // Base edge style
                 {
                     selector: 'edge',
                     style: {
-                        'width': 2,
-                        'line-color': '#95a5a6',
-                        'target-arrow-color': '#95a5a6',
                         'target-arrow-shape': 'triangle',
                         'curve-style': 'bezier',
                         'label': 'data(label)',
                         'font-size': '10px',
                         'text-rotation': 'autorotate',
                         'text-margin-y': -10,
-                        'color': '#555'
+                        'color': '#555',
+                        // Dynamic styling based on type
+                        'width': function(ele) {
+                            const type = ele.data('type') || 'supports';
+                            return EDGE_TYPES[type]?.width || 2;
+                        },
+                        'line-color': function(ele) {
+                            const type = ele.data('type') || 'supports';
+                            return EDGE_TYPES[type]?.color || '#95a5a6';
+                        },
+                        'target-arrow-color': function(ele) {
+                            const type = ele.data('type') || 'supports';
+                            return EDGE_TYPES[type]?.color || '#95a5a6';
+                        },
+                        'line-style': function(ele) {
+                            const type = ele.data('type') || 'supports';
+                            return EDGE_TYPES[type]?.lineStyle || 'solid';
+                        }
                     }
                 },
                 {
                     selector: 'edge:selected',
                     style: {
-                        'line-color': '#e74c3c',
-                        'target-arrow-color': '#e74c3c',
-                        'width': 3
+                        'width': 3,
+                        'overlay-opacity': 0.2,
+                        'overlay-color': '#e74c3c'
                     }
                 }
             ],
@@ -204,6 +413,133 @@
 
         // Mode indicator element
         const modeIndicator = document.getElementById('mode-indicator');
+
+        // Context menu elements
+        const contextMenu = document.getElementById('context-menu');
+        let contextMenuTarget = null;
+
+        // Initialize legend
+        function initializeLegend() {
+            const nodeLegend = document.getElementById('node-legend');
+            const edgeLegend = document.getElementById('edge-legend');
+
+            // Add node types to legend
+            NODE_TYPE_KEYS.forEach((typeKey, index) => {
+                const type = NODE_TYPES[typeKey];
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+
+                const shape = document.createElement('span');
+                shape.className = 'legend-shape';
+                shape.style.backgroundColor = type.color;
+                shape.style.borderColor = type.borderColor;
+
+                // Approximate shape representation
+                if (type.shape === 'ellipse') {
+                    shape.style.borderRadius = '50%';
+                } else if (type.shape === 'round-rectangle') {
+                    shape.style.borderRadius = '8px';
+                } else if (type.shape === 'diamond') {
+                    shape.style.transform = 'rotate(45deg)';
+                } else if (type.shape === 'hexagon') {
+                    shape.style.clipPath = 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)';
+                }
+
+                const label = document.createElement('span');
+                label.className = 'legend-label';
+                label.textContent = `${index + 1}. ${type.label}`;
+
+                item.appendChild(shape);
+                item.appendChild(label);
+                nodeLegend.appendChild(item);
+            });
+
+            // Add edge types to legend
+            EDGE_TYPE_KEYS.forEach((typeKey) => {
+                const type = EDGE_TYPES[typeKey];
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+
+                const line = document.createElement('span');
+                line.className = 'legend-line';
+                line.style.backgroundColor = type.color;
+
+                if (type.lineStyle === 'dashed') {
+                    line.style.backgroundImage = `linear-gradient(to right, ${type.color} 0%, ${type.color} 50%, transparent 50%, transparent 100%)`;
+                    line.style.backgroundSize = '8px 2px';
+                    line.style.backgroundColor = 'transparent';
+                } else if (type.lineStyle === 'dotted') {
+                    line.style.backgroundImage = `linear-gradient(to right, ${type.color} 0%, ${type.color} 25%, transparent 25%, transparent 100%)`;
+                    line.style.backgroundSize = '6px 2px';
+                    line.style.backgroundColor = 'transparent';
+                }
+
+                const label = document.createElement('span');
+                label.className = 'legend-label';
+                label.textContent = type.label;
+
+                item.appendChild(line);
+                item.appendChild(label);
+                edgeLegend.appendChild(item);
+            });
+        }
+
+        // Show context menu
+        function showContextMenu(x, y, target) {
+            contextMenuTarget = target;
+            contextMenu.innerHTML = '';
+
+            if (target.isNode()) {
+                // Node context menu
+                const header = document.createElement('div');
+                header.className = 'context-menu-header';
+                header.textContent = 'Change Node Type';
+                contextMenu.appendChild(header);
+
+                NODE_TYPE_KEYS.forEach((typeKey, index) => {
+                    const type = NODE_TYPES[typeKey];
+                    const item = document.createElement('div');
+                    item.className = 'context-menu-item';
+                    item.textContent = `${index + 1}. ${type.label}`;
+                    item.onclick = () => {
+                        changeNodeType(target, typeKey);
+                        hideContextMenu();
+                    };
+                    contextMenu.appendChild(item);
+                });
+            } else if (target.isEdge()) {
+                // Edge context menu
+                const header = document.createElement('div');
+                header.className = 'context-menu-header';
+                header.textContent = 'Change Edge Type';
+                contextMenu.appendChild(header);
+
+                EDGE_TYPE_KEYS.forEach((typeKey) => {
+                    const type = EDGE_TYPES[typeKey];
+                    const item = document.createElement('div');
+                    item.className = 'context-menu-item';
+                    item.textContent = type.label;
+                    item.onclick = () => {
+                        changeEdgeType(target, typeKey);
+                        hideContextMenu();
+                    };
+                    contextMenu.appendChild(item);
+                });
+            }
+
+            contextMenu.style.left = x + 'px';
+            contextMenu.style.top = y + 'px';
+            contextMenu.classList.add('active');
+        }
+
+        // Hide context menu
+        function hideContextMenu() {
+            contextMenu.classList.remove('active');
+            contextMenuTarget = null;
+        }
+
+        // Initialize legend on load
+        initializeLegend();
 
         // Helper function to generate unique node ID
         function getNextNodeId() {
@@ -256,10 +592,49 @@
                     id: edgeId,
                     source: sourceId,
                     target: targetId,
-                    label: 'relates_to'
+                    label: 'relates_to',
+                    type: 'supports'
                 }
             });
             return edgeId;
+        }
+
+        // Change node type
+        function changeNodeType(node, newType) {
+            if (NODE_TYPES[newType]) {
+                node.data('type', newType);
+                // Force Cytoscape to re-render
+                node.style('shape', NODE_TYPES[newType].shape);
+                node.style('background-color', NODE_TYPES[newType].color);
+                node.style('border-color', NODE_TYPES[newType].borderColor);
+            }
+        }
+
+        // Cycle through edge types
+        function cycleEdgeType(edge) {
+            const currentType = edge.data('type') || 'supports';
+            const currentIndex = EDGE_TYPE_KEYS.indexOf(currentType);
+            const nextIndex = (currentIndex + 1) % EDGE_TYPE_KEYS.length;
+            const nextType = EDGE_TYPE_KEYS[nextIndex];
+
+            edge.data('type', nextType);
+            // Force Cytoscape to re-render
+            edge.style('line-color', EDGE_TYPES[nextType].color);
+            edge.style('target-arrow-color', EDGE_TYPES[nextType].color);
+            edge.style('line-style', EDGE_TYPES[nextType].lineStyle);
+            edge.style('width', EDGE_TYPES[nextType].width);
+        }
+
+        // Change edge type
+        function changeEdgeType(edge, newType) {
+            if (EDGE_TYPES[newType]) {
+                edge.data('type', newType);
+                // Force Cytoscape to re-render
+                edge.style('line-color', EDGE_TYPES[newType].color);
+                edge.style('target-arrow-color', EDGE_TYPES[newType].color);
+                edge.style('line-style', EDGE_TYPES[newType].lineStyle);
+                edge.style('width', EDGE_TYPES[newType].width);
+            }
         }
 
         // Edit element label (node or edge)
@@ -326,7 +701,8 @@
                     id: edge.data('id'),
                     source: edge.data('source'),
                     target: edge.data('target'),
-                    label: edge.data('label')
+                    label: edge.data('label'),
+                    type: edge.data('type')
                 });
             });
 
@@ -382,7 +758,8 @@
                                 id: edgeData.id,
                                 source: edgeData.source,
                                 target: edgeData.target,
-                                label: edgeData.label || 'relates_to'
+                                label: edgeData.label || 'relates_to',
+                                type: edgeData.type || 'supports'
                             }
                         });
 
@@ -436,6 +813,26 @@
             editElement(event.target);
         });
 
+        // Right-click (context menu) on nodes and edges
+        cy.on('cxttap', 'node, edge', function(event) {
+            event.preventDefault();
+            const target = event.target;
+            const renderedPosition = event.renderedPosition || event.position;
+            showContextMenu(renderedPosition.x, renderedPosition.y, target);
+        });
+
+        // Click anywhere to hide context menu
+        document.addEventListener('click', function(event) {
+            if (!contextMenu.contains(event.target)) {
+                hideContextMenu();
+            }
+        });
+
+        // Hide context menu on canvas click
+        cy.on('tap', function(event) {
+            hideContextMenu();
+        });
+
         // Keyboard shortcuts
         document.addEventListener('keydown', function(event) {
             // Prevent shortcuts when editing
@@ -472,6 +869,26 @@
             // Delete key - Delete selected
             if (event.key === 'Delete' || event.key === 'Backspace') {
                 deleteSelected();
+            }
+
+            // 1-5 keys - Change node type
+            if (['1', '2', '3', '4', '5'].includes(event.key)) {
+                const selected = cy.$('node:selected');
+                if (selected.length === 1) {
+                    const typeIndex = parseInt(event.key) - 1;
+                    const newType = NODE_TYPE_KEYS[typeIndex];
+                    if (newType) {
+                        changeNodeType(selected[0], newType);
+                    }
+                }
+            }
+
+            // T key - Cycle edge type
+            if (event.key === 't' || event.key === 'T') {
+                const selected = cy.$('edge:selected');
+                if (selected.length === 1) {
+                    cycleEdgeType(selected[0]);
+                }
             }
 
             // Ctrl+S - Save
@@ -527,12 +944,12 @@
             const sampleData = {
                 "nodes": [
                     {"id": "n1", "label": "Concept A", "type": "concept", "position": {"x": 200, "y": 150}},
-                    {"id": "n2", "label": "Concept B", "type": "concept", "position": {"x": 400, "y": 150}},
-                    {"id": "n3", "label": "Evidence", "type": "concept", "position": {"x": 300, "y": 300}}
+                    {"id": "n2", "label": "Claim B", "type": "claim", "position": {"x": 400, "y": 150}},
+                    {"id": "n3", "label": "Evidence C", "type": "evidence", "position": {"x": 300, "y": 300}}
                 ],
                 "edges": [
-                    {"id": "e1", "source": "n1", "target": "n2", "label": "relates_to"},
-                    {"id": "e2", "source": "n3", "target": "n1", "label": "supports"}
+                    {"id": "e1", "source": "n1", "target": "n2", "label": "derives from", "type": "derives_from"},
+                    {"id": "e2", "source": "n3", "target": "n1", "label": "supports", "type": "supports"}
                 ]
             };
             loadGraph(JSON.stringify(sampleData));
