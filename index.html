@@ -325,6 +325,12 @@
             background: #f8f9fa;
             border-radius: 3px;
             border-left: 3px solid #3498db;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .connection-item:hover {
+            background: #e8ecef;
         }
 
         .connection-item.incoming {
@@ -939,6 +945,17 @@
                     const item = document.createElement('div');
                     item.className = 'connection-item outgoing';
                     item.textContent = `→ ${edge.data('label')} → ${target.data('label')}`;
+                    // Make item clickable to navigate to target node
+                    item.onclick = function() {
+                        cy.elements().unselect();
+                        target.select();
+                        cy.animate({
+                            center: { eles: target },
+                            zoom: cy.zoom()
+                        }, {
+                            duration: 300
+                        });
+                    };
                     outgoingList.appendChild(item);
                 });
                 if (outgoingEdges.length === 0) {
@@ -952,6 +969,17 @@
                     const item = document.createElement('div');
                     item.className = 'connection-item incoming';
                     item.textContent = `${source.data('label')} → ${edge.data('label')} →`;
+                    // Make item clickable to navigate to source node
+                    item.onclick = function() {
+                        cy.elements().unselect();
+                        source.select();
+                        cy.animate({
+                            center: { eles: source },
+                            zoom: cy.zoom()
+                        }, {
+                            duration: 300
+                        });
+                    };
                     incomingList.appendChild(item);
                 });
                 if (incomingEdges.length === 0) {
@@ -963,8 +991,8 @@
                     editElement(element);
                 };
 
-                // Add change handler for content textarea
-                document.getElementById('info-content-textarea').onchange = function() {
+                // Add input handler for content textarea (real-time updates)
+                document.getElementById('info-content-textarea').oninput = function() {
                     element.data('content', this.value);
                 };
 
@@ -991,11 +1019,11 @@
                     </div>
                     <div class="info-section">
                         <div class="info-label">Source Node</div>
-                        <div class="connection-item">${source.data('label')} (${NODE_TYPES[source.data('type')].label})</div>
+                        <div class="connection-item" id="edge-source-node">${source.data('label')} (${NODE_TYPES[source.data('type')].label})</div>
                     </div>
                     <div class="info-section">
                         <div class="info-label">Target Node</div>
-                        <div class="connection-item">${target.data('label')} (${NODE_TYPES[target.data('type')].label})</div>
+                        <div class="connection-item" id="edge-target-node">${target.data('label')} (${NODE_TYPES[target.data('type')].label})</div>
                     </div>
                 `;
 
@@ -1004,9 +1032,32 @@
                     editElement(element);
                 };
 
-                // Add change handler for content textarea
-                document.getElementById('info-content-textarea').onchange = function() {
+                // Add input handler for content textarea (real-time updates)
+                document.getElementById('info-content-textarea').oninput = function() {
                     element.data('content', this.value);
+                };
+
+                // Add click handlers for source and target nodes
+                document.getElementById('edge-source-node').onclick = function() {
+                    cy.elements().unselect();
+                    source.select();
+                    cy.animate({
+                        center: { eles: source },
+                        zoom: cy.zoom()
+                    }, {
+                        duration: 300
+                    });
+                };
+
+                document.getElementById('edge-target-node').onclick = function() {
+                    cy.elements().unselect();
+                    target.select();
+                    cy.animate({
+                        center: { eles: target },
+                        zoom: cy.zoom()
+                    }, {
+                        duration: 300
+                    });
                 };
             }
         }
@@ -1240,6 +1291,12 @@
         document.addEventListener('keydown', function(event) {
             // Prevent shortcuts when editing
             if (editingElement) return;
+
+            // Prevent shortcuts when typing in textarea or input
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'INPUT')) {
+                return;
+            }
 
             // N key - Add node at center
             if (event.key === 'n' || event.key === 'N') {
