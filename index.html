@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>L Language - Graph Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        #controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #cy {
+            flex: 1;
+            background: white;
+            margin: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        #instructions {
+            background: #ecf0f1;
+            padding: 1rem 2rem;
+            border-top: 1px solid #bdc3c7;
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        #instructions strong {
+            color: #2c3e50;
+        }
+
+        .mode-indicator {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(46, 204, 113, 0.9);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            font-weight: bold;
+            display: none;
+            z-index: 1000;
+        }
+
+        .mode-indicator.active {
+            display: block;
+        }
+
+        .mode-indicator.edge-mode {
+            background: rgba(241, 196, 15, 0.9);
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>L Language - Interactive Graph Editor</h1>
+        <div id="controls">
+            <button id="add-node-btn">Add Node (N)</button>
+            <button id="save-btn">Save Graph (Ctrl+S)</button>
+            <button id="load-btn">Load Graph</button>
+            <input type="file" id="file-input" accept=".json">
+            <button id="clear-btn">Clear Graph</button>
+        </div>
+    </div>
+
+    <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
+        <div id="mode-indicator" class="mode-indicator"></div>
+        <div id="cy"></div>
+    </div>
+
+    <div id="instructions">
+        <strong>Node Operations:</strong> Click empty space or press 'N' to add node | Click to select | Double-click to edit label | Delete key to remove |
+        <strong>Edge Operations:</strong> Select node + press 'E' + click target to add edge | Double-click edge to edit label | Delete key to remove edge
+    </div>
+
+    <script>
+        // Initialize Cytoscape
+        const cy = cytoscape({
+            container: document.getElementById('cy'),
+
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': '#3498db',
+                        'label': 'data(label)',
+                        'color': '#2c3e50',
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'font-size': '12px',
+                        'width': '60px',
+                        'height': '60px',
+                        'border-width': '2px',
+                        'border-color': '#2980b9',
+                        'text-wrap': 'wrap',
+                        'text-max-width': '80px'
+                    }
+                },
+                {
+                    selector: 'node:selected',
+                    style: {
+                        'background-color': '#e74c3c',
+                        'border-color': '#c0392b',
+                        'border-width': '3px'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 2,
+                        'line-color': '#95a5a6',
+                        'target-arrow-color': '#95a5a6',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'label': 'data(label)',
+                        'font-size': '10px',
+                        'text-rotation': 'autorotate',
+                        'text-margin-y': -10,
+                        'color': '#555'
+                    }
+                },
+                {
+                    selector: 'edge:selected',
+                    style: {
+                        'line-color': '#e74c3c',
+                        'target-arrow-color': '#e74c3c',
+                        'width': 3
+                    }
+                }
+            ],
+
+            layout: {
+                name: 'preset'
+            },
+
+            // Enable panning and zooming
+            zoomingEnabled: true,
+            userZoomingEnabled: true,
+            panningEnabled: true,
+            userPanningEnabled: true,
+            boxSelectionEnabled: false,
+            autoungrabify: false
+        });
+
+        // State management
+        let nodeIdCounter = 1;
+        let edgeIdCounter = 1;
+        let edgeMode = false;
+        let edgeModeSourceNode = null;
+        let editingElement = null;
+
+        // Mode indicator element
+        const modeIndicator = document.getElementById('mode-indicator');
+
+        // Helper function to generate unique node ID
+        function getNextNodeId() {
+            return 'n' + nodeIdCounter++;
+        }
+
+        // Helper function to generate unique edge ID
+        function getNextEdgeId() {
+            return 'e' + edgeIdCounter++;
+        }
+
+        // Helper function to show mode indicator
+        function showModeIndicator(text, isEdgeMode = false) {
+            modeIndicator.textContent = text;
+            modeIndicator.classList.add('active');
+            if (isEdgeMode) {
+                modeIndicator.classList.add('edge-mode');
+            } else {
+                modeIndicator.classList.remove('edge-mode');
+            }
+        }
+
+        // Helper function to hide mode indicator
+        function hideModeIndicator() {
+            modeIndicator.classList.remove('active');
+            modeIndicator.classList.remove('edge-mode');
+        }
+
+        // Add node at position
+        function addNode(x, y) {
+            const nodeId = getNextNodeId();
+            cy.add({
+                group: 'nodes',
+                data: {
+                    id: nodeId,
+                    label: 'New Node',
+                    type: 'concept'
+                },
+                position: { x: x, y: y }
+            });
+            return nodeId;
+        }
+
+        // Add edge between two nodes
+        function addEdge(sourceId, targetId) {
+            const edgeId = getNextEdgeId();
+            cy.add({
+                group: 'edges',
+                data: {
+                    id: edgeId,
+                    source: sourceId,
+                    target: targetId,
+                    label: 'relates_to'
+                }
+            });
+            return edgeId;
+        }
+
+        // Edit element label (node or edge)
+        function editElement(element) {
+            if (editingElement) return; // Prevent multiple edits at once
+
+            editingElement = element;
+            const currentLabel = element.data('label');
+            const newLabel = prompt('Edit label:', currentLabel);
+
+            if (newLabel !== null && newLabel.trim() !== '') {
+                element.data('label', newLabel.trim());
+            }
+
+            editingElement = null;
+        }
+
+        // Delete selected elements
+        function deleteSelected() {
+            const selected = cy.$(':selected');
+            if (selected.length > 0) {
+                cy.remove(selected);
+            }
+        }
+
+        // Enter edge creation mode
+        function enterEdgeMode() {
+            const selected = cy.$('node:selected');
+            if (selected.length !== 1) {
+                alert('Please select exactly one node as the source for the edge.');
+                return;
+            }
+
+            edgeMode = true;
+            edgeModeSourceNode = selected[0];
+            showModeIndicator(`Edge Mode: Click target node (source: ${edgeModeSourceNode.data('label')})`, true);
+        }
+
+        // Exit edge creation mode
+        function exitEdgeMode() {
+            edgeMode = false;
+            edgeModeSourceNode = null;
+            hideModeIndicator();
+        }
+
+        // Save graph to JSON
+        function saveGraph() {
+            const graphData = {
+                nodes: [],
+                edges: []
+            };
+
+            cy.nodes().forEach(node => {
+                graphData.nodes.push({
+                    id: node.data('id'),
+                    label: node.data('label'),
+                    type: node.data('type'),
+                    position: node.position()
+                });
+            });
+
+            cy.edges().forEach(edge => {
+                graphData.edges.push({
+                    id: edge.data('id'),
+                    source: edge.data('source'),
+                    target: edge.data('target'),
+                    label: edge.data('label')
+                });
+            });
+
+            const jsonString = JSON.stringify(graphData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'l-lang-graph.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Load graph from JSON
+        function loadGraph(jsonData) {
+            try {
+                const graphData = JSON.parse(jsonData);
+
+                // Clear existing graph
+                cy.elements().remove();
+
+                // Reset counters
+                nodeIdCounter = 1;
+                edgeIdCounter = 1;
+
+                // Add nodes
+                if (graphData.nodes) {
+                    graphData.nodes.forEach(nodeData => {
+                        cy.add({
+                            group: 'nodes',
+                            data: {
+                                id: nodeData.id,
+                                label: nodeData.label,
+                                type: nodeData.type || 'concept'
+                            },
+                            position: nodeData.position || { x: 100, y: 100 }
+                        });
+
+                        // Update counter to avoid ID conflicts
+                        const idNum = parseInt(nodeData.id.substring(1));
+                        if (idNum >= nodeIdCounter) {
+                            nodeIdCounter = idNum + 1;
+                        }
+                    });
+                }
+
+                // Add edges
+                if (graphData.edges) {
+                    graphData.edges.forEach(edgeData => {
+                        cy.add({
+                            group: 'edges',
+                            data: {
+                                id: edgeData.id,
+                                source: edgeData.source,
+                                target: edgeData.target,
+                                label: edgeData.label || 'relates_to'
+                            }
+                        });
+
+                        // Update counter to avoid ID conflicts
+                        const idNum = parseInt(edgeData.id.substring(1));
+                        if (idNum >= edgeIdCounter) {
+                            edgeIdCounter = idNum + 1;
+                        }
+                    });
+                }
+
+                // Fit graph to viewport
+                if (cy.elements().length > 0) {
+                    cy.fit(cy.elements(), 50);
+                }
+
+            } catch (error) {
+                alert('Error loading graph: ' + error.message);
+            }
+        }
+
+        // Event Listeners
+
+        // Click on canvas (for adding nodes or creating edges)
+        cy.on('tap', function(event) {
+            // Check if clicked on background
+            if (event.target === cy) {
+                if (!edgeMode) {
+                    // Add new node at click position
+                    const pos = event.position;
+                    addNode(pos.x, pos.y);
+                } else {
+                    // Exit edge mode if clicking on background
+                    exitEdgeMode();
+                }
+            }
+            // Check if clicked on node while in edge mode
+            else if (event.target.isNode() && edgeMode) {
+                const targetNode = event.target;
+                if (targetNode.id() !== edgeModeSourceNode.id()) {
+                    addEdge(edgeModeSourceNode.id(), targetNode.id());
+                }
+                exitEdgeMode();
+            }
+        });
+
+        // Double-click to edit
+        cy.on('dbltap', 'node, edge', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            editElement(event.target);
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            // Prevent shortcuts when editing
+            if (editingElement) return;
+
+            // N key - Add node at center
+            if (event.key === 'n' || event.key === 'N') {
+                const center = {
+                    x: cy.width() / 2,
+                    y: cy.height() / 2
+                };
+                const modelPosition = cy.pan();
+                const zoom = cy.zoom();
+                addNode(
+                    (center.x - modelPosition.x) / zoom,
+                    (center.y - modelPosition.y) / zoom
+                );
+            }
+
+            // E key - Enter edge mode
+            if (event.key === 'e' || event.key === 'E') {
+                if (!edgeMode) {
+                    enterEdgeMode();
+                }
+            }
+
+            // Escape key - Exit edge mode
+            if (event.key === 'Escape') {
+                if (edgeMode) {
+                    exitEdgeMode();
+                }
+            }
+
+            // Delete key - Delete selected
+            if (event.key === 'Delete' || event.key === 'Backspace') {
+                deleteSelected();
+            }
+
+            // Ctrl+S - Save
+            if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                event.preventDefault();
+                saveGraph();
+            }
+        });
+
+        // Button event listeners
+        document.getElementById('add-node-btn').addEventListener('click', function() {
+            const center = {
+                x: cy.width() / 2,
+                y: cy.height() / 2
+            };
+            const modelPosition = cy.pan();
+            const zoom = cy.zoom();
+            addNode(
+                (center.x - modelPosition.x) / zoom,
+                (center.y - modelPosition.y) / zoom
+            );
+        });
+
+        document.getElementById('save-btn').addEventListener('click', saveGraph);
+
+        document.getElementById('load-btn').addEventListener('click', function() {
+            document.getElementById('file-input').click();
+        });
+
+        document.getElementById('file-input').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    loadGraph(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+            // Reset file input so the same file can be loaded again
+            event.target.value = '';
+        });
+
+        document.getElementById('clear-btn').addEventListener('click', function() {
+            if (confirm('Are you sure you want to clear the entire graph?')) {
+                cy.elements().remove();
+                nodeIdCounter = 1;
+                edgeIdCounter = 1;
+            }
+        });
+
+        // Initialize with a sample graph
+        function loadSampleGraph() {
+            const sampleData = {
+                "nodes": [
+                    {"id": "n1", "label": "Concept A", "type": "concept", "position": {"x": 200, "y": 150}},
+                    {"id": "n2", "label": "Concept B", "type": "concept", "position": {"x": 400, "y": 150}},
+                    {"id": "n3", "label": "Evidence", "type": "concept", "position": {"x": 300, "y": 300}}
+                ],
+                "edges": [
+                    {"id": "e1", "source": "n1", "target": "n2", "label": "relates_to"},
+                    {"id": "e2", "source": "n3", "target": "n1", "label": "supports"}
+                ]
+            };
+            loadGraph(JSON.stringify(sampleData));
+        }
+
+        // Load sample graph on startup
+        loadSampleGraph();
+    </script>
+</body>
+</html>
