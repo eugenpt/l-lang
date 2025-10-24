@@ -193,6 +193,147 @@
             font-size: 11px;
             color: #555;
         }
+
+        /* Inline text editor */
+        #inline-editor {
+            position: absolute;
+            background: white;
+            border: 2px solid #3498db;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            font-family: inherit;
+            z-index: 2000;
+            display: none;
+            min-width: 100px;
+            outline: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        #inline-editor:focus {
+            border-color: #2980b9;
+        }
+
+        /* Info panel */
+        #info-panel {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 300px;
+            max-height: calc(100vh - 350px);
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+        }
+
+        #info-panel.active {
+            display: flex;
+        }
+
+        .info-panel-header {
+            background: #2c3e50;
+            color: white;
+            padding: 12px;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .info-panel-close {
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        .info-panel-close:hover {
+            opacity: 0.8;
+        }
+
+        .info-panel-content {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .info-section {
+            margin-bottom: 12px;
+        }
+
+        .info-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-label {
+            font-weight: bold;
+            font-size: 11px;
+            color: #555;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+
+        .info-value {
+            font-size: 13px;
+            color: #2c3e50;
+            padding: 6px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            word-wrap: break-word;
+        }
+
+        .info-value.editable {
+            cursor: pointer;
+            border: 1px solid #e0e0e0;
+        }
+
+        .info-value.editable:hover {
+            background: #ecf0f1;
+            border-color: #bdc3c7;
+        }
+
+        .info-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 6px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 13px;
+            resize: vertical;
+        }
+
+        .info-textarea:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .connection-list {
+            font-size: 12px;
+            color: #555;
+        }
+
+        .connection-item {
+            padding: 4px 6px;
+            margin: 2px 0;
+            background: #f8f9fa;
+            border-radius: 3px;
+            border-left: 3px solid #3498db;
+        }
+
+        .connection-item.incoming {
+            border-left-color: #2ecc71;
+        }
+
+        .connection-item.outgoing {
+            border-left-color: #e74c3c;
+        }
     </style>
 </head>
 <body>
@@ -209,8 +350,16 @@
 
     <div style="position: relative; flex: 1; display: flex; flex-direction: column;">
         <div id="mode-indicator" class="mode-indicator"></div>
+        <input type="text" id="inline-editor" />
         <div id="cy"></div>
         <div id="context-menu" class="context-menu"></div>
+        <div id="info-panel">
+            <div class="info-panel-header">
+                <span id="info-panel-title">Info</span>
+                <span class="info-panel-close" id="info-panel-close">&times;</span>
+            </div>
+            <div class="info-panel-content" id="info-panel-content"></div>
+        </div>
         <div id="legend">
             <h3>Legend</h3>
             <div class="legend-section">
@@ -418,6 +567,15 @@
         const contextMenu = document.getElementById('context-menu');
         let contextMenuTarget = null;
 
+        // Inline editor elements
+        const inlineEditor = document.getElementById('inline-editor');
+
+        // Info panel elements
+        const infoPanel = document.getElementById('info-panel');
+        const infoPanelTitle = document.getElementById('info-panel-title');
+        const infoPanelContent = document.getElementById('info-panel-content');
+        const infoPanelClose = document.getElementById('info-panel-close');
+
         // Initialize legend
         function initializeLegend() {
             const nodeLegend = document.getElementById('node-legend');
@@ -576,7 +734,8 @@
                 data: {
                     id: nodeId,
                     label: 'New Node',
-                    type: 'concept'
+                    type: 'concept',
+                    content: ''  // Markdown content
                 },
                 position: { x: x, y: y }
             });
@@ -586,14 +745,17 @@
         // Add edge between two nodes
         function addEdge(sourceId, targetId) {
             const edgeId = getNextEdgeId();
+            const edgeType = 'supports';
             cy.add({
                 group: 'edges',
                 data: {
                     id: edgeId,
                     source: sourceId,
                     target: targetId,
-                    label: 'relates_to',
-                    type: 'supports'
+                    label: EDGE_TYPES[edgeType].label,  // Initialize with type name
+                    type: edgeType,
+                    content: '',  // Markdown content
+                    labelMatchesType: true  // Track if label was manually changed
                 }
             });
             return edgeId;
@@ -613,9 +775,21 @@
         // Cycle through edge types
         function cycleEdgeType(edge) {
             const currentType = edge.data('type') || 'supports';
+            const currentLabel = edge.data('label');
             const currentIndex = EDGE_TYPE_KEYS.indexOf(currentType);
             const nextIndex = (currentIndex + 1) % EDGE_TYPE_KEYS.length;
             const nextType = EDGE_TYPE_KEYS[nextIndex];
+
+            // Check if label matches current type name
+            const labelMatchesType = currentLabel === EDGE_TYPES[currentType].label;
+
+            // Update label if it matches the type name
+            if (labelMatchesType) {
+                edge.data('label', EDGE_TYPES[nextType].label);
+                edge.data('labelMatchesType', true);
+            } else {
+                edge.data('labelMatchesType', false);
+            }
 
             edge.data('type', nextType);
             // Force Cytoscape to re-render
@@ -623,33 +797,223 @@
             edge.style('target-arrow-color', EDGE_TYPES[nextType].color);
             edge.style('line-style', EDGE_TYPES[nextType].lineStyle);
             edge.style('width', EDGE_TYPES[nextType].width);
+
+            // Update info panel if this edge is selected
+            if (edge.selected()) {
+                showInfoPanel(edge);
+            }
         }
 
         // Change edge type
         function changeEdgeType(edge, newType) {
             if (EDGE_TYPES[newType]) {
+                const currentType = edge.data('type') || 'supports';
+                const currentLabel = edge.data('label');
+
+                // Check if label matches current type name
+                const labelMatchesType = currentLabel === EDGE_TYPES[currentType].label;
+
+                // Update label if it matches the type name
+                if (labelMatchesType) {
+                    edge.data('label', EDGE_TYPES[newType].label);
+                    edge.data('labelMatchesType', true);
+                } else {
+                    edge.data('labelMatchesType', false);
+                }
+
                 edge.data('type', newType);
                 // Force Cytoscape to re-render
                 edge.style('line-color', EDGE_TYPES[newType].color);
                 edge.style('target-arrow-color', EDGE_TYPES[newType].color);
                 edge.style('line-style', EDGE_TYPES[newType].lineStyle);
                 edge.style('width', EDGE_TYPES[newType].width);
+
+                // Update info panel if this edge is selected
+                if (edge.selected()) {
+                    showInfoPanel(edge);
+                }
             }
         }
 
-        // Edit element label (node or edge)
+        // Edit element label (node or edge) with inline editor
         function editElement(element) {
             if (editingElement) return; // Prevent multiple edits at once
 
             editingElement = element;
             const currentLabel = element.data('label');
-            const newLabel = prompt('Edit label:', currentLabel);
 
-            if (newLabel !== null && newLabel.trim() !== '') {
-                element.data('label', newLabel.trim());
+            // Position the inline editor
+            const renderedPosition = element.renderedPosition ? element.renderedPosition() : element.renderedMidpoint();
+            inlineEditor.style.left = (renderedPosition.x - 50) + 'px';
+            inlineEditor.style.top = (renderedPosition.y - 15) + 'px';
+            inlineEditor.style.display = 'block';
+            inlineEditor.value = currentLabel;
+            inlineEditor.focus();
+            inlineEditor.select();
+
+            // Handle finish editing
+            function finishEditing() {
+                const newLabel = inlineEditor.value.trim();
+                if (newLabel !== '') {
+                    element.data('label', newLabel);
+                    // If editing an edge, update labelMatchesType flag
+                    if (element.isEdge()) {
+                        const edgeType = element.data('type') || 'supports';
+                        const labelMatchesType = newLabel === EDGE_TYPES[edgeType].label;
+                        element.data('labelMatchesType', labelMatchesType);
+                    }
+                }
+                inlineEditor.style.display = 'none';
+                editingElement = null;
+
+                // Update info panel if element is still selected
+                if (element.selected()) {
+                    showInfoPanel(element);
+                }
             }
 
-            editingElement = null;
+            // Remove previous listeners
+            inlineEditor.onblur = null;
+            inlineEditor.onkeydown = null;
+
+            // Set new listeners
+            inlineEditor.onblur = finishEditing;
+            inlineEditor.onkeydown = function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    finishEditing();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    inlineEditor.style.display = 'none';
+                    editingElement = null;
+                }
+            };
+        }
+
+        // Show info panel for selected element
+        function showInfoPanel(element) {
+            if (!element) {
+                infoPanel.classList.remove('active');
+                return;
+            }
+
+            infoPanel.classList.add('active');
+
+            if (element.isNode()) {
+                infoPanelTitle.textContent = 'Node Info';
+                const nodeType = element.data('type') || 'concept';
+                const nodeLabel = element.data('label') || '';
+                const nodeContent = element.data('content') || '';
+
+                // Get connections
+                const outgoingEdges = element.connectedEdges('[source = "' + element.id() + '"]');
+                const incomingEdges = element.connectedEdges('[target = "' + element.id() + '"]');
+
+                infoPanelContent.innerHTML = `
+                    <div class="info-section">
+                        <div class="info-label">Type</div>
+                        <div class="info-value">${NODE_TYPES[nodeType].label}</div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Label</div>
+                        <div class="info-value editable" id="info-label-value">${nodeLabel}</div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Content (Markdown)</div>
+                        <textarea class="info-textarea" id="info-content-textarea">${nodeContent}</textarea>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Outgoing Connections (${outgoingEdges.length})</div>
+                        <div class="connection-list" id="outgoing-connections"></div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Incoming Connections (${incomingEdges.length})</div>
+                        <div class="connection-list" id="incoming-connections"></div>
+                    </div>
+                `;
+
+                // Add outgoing connections
+                const outgoingList = document.getElementById('outgoing-connections');
+                outgoingEdges.forEach(edge => {
+                    const target = edge.target();
+                    const item = document.createElement('div');
+                    item.className = 'connection-item outgoing';
+                    item.textContent = `→ ${edge.data('label')} → ${target.data('label')}`;
+                    outgoingList.appendChild(item);
+                });
+                if (outgoingEdges.length === 0) {
+                    outgoingList.innerHTML = '<div style="font-size: 11px; color: #999; padding: 4px;">No outgoing connections</div>';
+                }
+
+                // Add incoming connections
+                const incomingList = document.getElementById('incoming-connections');
+                incomingEdges.forEach(edge => {
+                    const source = edge.source();
+                    const item = document.createElement('div');
+                    item.className = 'connection-item incoming';
+                    item.textContent = `${source.data('label')} → ${edge.data('label')} →`;
+                    incomingList.appendChild(item);
+                });
+                if (incomingEdges.length === 0) {
+                    incomingList.innerHTML = '<div style="font-size: 11px; color: #999; padding: 4px;">No incoming connections</div>';
+                }
+
+                // Add click handler for label editing
+                document.getElementById('info-label-value').onclick = function() {
+                    editElement(element);
+                };
+
+                // Add change handler for content textarea
+                document.getElementById('info-content-textarea').onchange = function() {
+                    element.data('content', this.value);
+                };
+
+            } else if (element.isEdge()) {
+                infoPanelTitle.textContent = 'Edge Info';
+                const edgeType = element.data('type') || 'supports';
+                const edgeLabel = element.data('label') || '';
+                const edgeContent = element.data('content') || '';
+                const source = element.source();
+                const target = element.target();
+
+                infoPanelContent.innerHTML = `
+                    <div class="info-section">
+                        <div class="info-label">Type</div>
+                        <div class="info-value">${EDGE_TYPES[edgeType].label}</div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Label</div>
+                        <div class="info-value editable" id="info-label-value">${edgeLabel}</div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Content (Markdown)</div>
+                        <textarea class="info-textarea" id="info-content-textarea">${edgeContent}</textarea>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Source Node</div>
+                        <div class="connection-item">${source.data('label')} (${NODE_TYPES[source.data('type')].label})</div>
+                    </div>
+                    <div class="info-section">
+                        <div class="info-label">Target Node</div>
+                        <div class="connection-item">${target.data('label')} (${NODE_TYPES[target.data('type')].label})</div>
+                    </div>
+                `;
+
+                // Add click handler for label editing
+                document.getElementById('info-label-value').onclick = function() {
+                    editElement(element);
+                };
+
+                // Add change handler for content textarea
+                document.getElementById('info-content-textarea').onchange = function() {
+                    element.data('content', this.value);
+                };
+            }
+        }
+
+        // Hide info panel
+        function hideInfoPanel() {
+            infoPanel.classList.remove('active');
         }
 
         // Delete selected elements
@@ -657,6 +1021,7 @@
             const selected = cy.$(':selected');
             if (selected.length > 0) {
                 cy.remove(selected);
+                hideInfoPanel();
             }
         }
 
@@ -692,6 +1057,7 @@
                     id: node.data('id'),
                     label: node.data('label'),
                     type: node.data('type'),
+                    content: node.data('content') || '',
                     position: node.position()
                 });
             });
@@ -702,7 +1068,9 @@
                     source: edge.data('source'),
                     target: edge.data('target'),
                     label: edge.data('label'),
-                    type: edge.data('type')
+                    type: edge.data('type'),
+                    content: edge.data('content') || '',
+                    labelMatchesType: edge.data('labelMatchesType') || false
                 });
             });
 
@@ -736,7 +1104,8 @@
                             data: {
                                 id: nodeData.id,
                                 label: nodeData.label,
-                                type: nodeData.type || 'concept'
+                                type: nodeData.type || 'concept',
+                                content: nodeData.content || ''
                             },
                             position: nodeData.position || { x: 100, y: 100 }
                         });
@@ -752,14 +1121,23 @@
                 // Add edges
                 if (graphData.edges) {
                     graphData.edges.forEach(edgeData => {
+                        const edgeType = edgeData.type || 'supports';
+                        const edgeLabel = edgeData.label || EDGE_TYPES[edgeType].label;
+                        // Check if label matches type
+                        const labelMatchesType = edgeData.labelMatchesType !== undefined
+                            ? edgeData.labelMatchesType
+                            : (edgeLabel === EDGE_TYPES[edgeType].label);
+
                         cy.add({
                             group: 'edges',
                             data: {
                                 id: edgeData.id,
                                 source: edgeData.source,
                                 target: edgeData.target,
-                                label: edgeData.label || 'relates_to',
-                                type: edgeData.type || 'supports'
+                                label: edgeLabel,
+                                type: edgeType,
+                                content: edgeData.content || '',
+                                labelMatchesType: labelMatchesType
                             }
                         });
 
@@ -828,9 +1206,34 @@
             }
         });
 
+        // Prevent default browser context menu
+        document.addEventListener('contextmenu', function(event) {
+            event.preventDefault();
+        });
+
         // Hide context menu on canvas click
         cy.on('tap', function(event) {
             hideContextMenu();
+        });
+
+        // Show info panel when selecting a node or edge
+        cy.on('select', 'node, edge', function(event) {
+            const element = event.target;
+            showInfoPanel(element);
+        });
+
+        // Hide info panel when unselecting
+        cy.on('unselect', 'node, edge', function(event) {
+            const selected = cy.$(':selected');
+            if (selected.length === 0) {
+                hideInfoPanel();
+            }
+        });
+
+        // Info panel close button
+        infoPanelClose.addEventListener('click', function() {
+            hideInfoPanel();
+            cy.$(':selected').unselect();
         });
 
         // Keyboard shortcuts
@@ -943,13 +1346,13 @@
         function loadSampleGraph() {
             const sampleData = {
                 "nodes": [
-                    {"id": "n1", "label": "Concept A", "type": "concept", "position": {"x": 200, "y": 150}},
-                    {"id": "n2", "label": "Claim B", "type": "claim", "position": {"x": 400, "y": 150}},
-                    {"id": "n3", "label": "Evidence C", "type": "evidence", "position": {"x": 300, "y": 300}}
+                    {"id": "n1", "label": "Concept A", "type": "concept", "content": "This is a concept node", "position": {"x": 200, "y": 150}},
+                    {"id": "n2", "label": "Claim B", "type": "claim", "content": "This represents a claim", "position": {"x": 400, "y": 150}},
+                    {"id": "n3", "label": "Evidence C", "type": "evidence", "content": "Supporting evidence", "position": {"x": 300, "y": 300}}
                 ],
                 "edges": [
-                    {"id": "e1", "source": "n1", "target": "n2", "label": "derives from", "type": "derives_from"},
-                    {"id": "e2", "source": "n3", "target": "n1", "label": "supports", "type": "supports"}
+                    {"id": "e1", "source": "n1", "target": "n2", "label": "derives from", "type": "derives_from", "content": "", "labelMatchesType": true},
+                    {"id": "e2", "source": "n3", "target": "n1", "label": "supports", "type": "supports", "content": "", "labelMatchesType": true}
                 ]
             };
             loadGraph(JSON.stringify(sampleData));
