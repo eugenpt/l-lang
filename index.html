@@ -440,6 +440,159 @@
             padding: 20px;
             font-size: 13px;
         }
+
+        /* Connector guide panel */
+        #connector-guide {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            width: 320px;
+            max-height: 400px;
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+        }
+
+        #connector-guide.active {
+            display: flex;
+        }
+
+        .connector-guide-header {
+            background: #9b59b6;
+            color: white;
+            padding: 12px;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .connector-guide-close {
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        .connector-guide-close:hover {
+            opacity: 0.8;
+        }
+
+        .connector-guide-content {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .connector-guide-template {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #ecf0f1;
+            border-radius: 4px;
+        }
+
+        .connector-slot {
+            padding: 10px;
+            margin: 6px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #95a5a6;
+        }
+
+        .connector-slot.required {
+            border-left-color: #e74c3c;
+        }
+
+        .connector-slot.optional {
+            border-left-color: #3498db;
+        }
+
+        .connector-slot.filled {
+            border-left-color: #2ecc71;
+            background: #e8f8f0;
+        }
+
+        .connector-slot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .connector-slot-label {
+            font-weight: bold;
+            font-size: 13px;
+            color: #2c3e50;
+        }
+
+        .connector-slot-required {
+            font-size: 10px;
+            color: #e74c3c;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .connector-slot-optional {
+            font-size: 10px;
+            color: #3498db;
+            text-transform: uppercase;
+        }
+
+        .connector-slot-status {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+
+        .connector-slot-status.connected {
+            color: #27ae60;
+            font-weight: 500;
+        }
+
+        .connector-slot-button {
+            padding: 4px 8px;
+            background: #9b59b6;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-top: 6px;
+        }
+
+        .connector-slot-button:hover {
+            background: #8e44ad;
+        }
+
+        .connector-slot-button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .template-badge {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #9b59b6;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            border: 2px solid white;
+        }
     </style>
 </head>
 <body>
@@ -474,6 +627,13 @@
                 <span class="info-panel-close" id="info-panel-close">&times;</span>
             </div>
             <div class="info-panel-content" id="info-panel-content"></div>
+        </div>
+        <div id="connector-guide">
+            <div class="connector-guide-header">
+                <span id="connector-guide-title">Connectors</span>
+                <span class="connector-guide-close" id="connector-guide-close">&times;</span>
+            </div>
+            <div class="connector-guide-content" id="connector-guide-content"></div>
         </div>
         <div id="legend">
             <h3>Legend</h3>
@@ -571,6 +731,43 @@
         // Helper to get node type keys in order
         const NODE_TYPE_KEYS = Object.keys(NODE_TYPES);
         const EDGE_TYPE_KEYS = Object.keys(EDGE_TYPES);
+
+        // Claim node templates with predefined connector slots
+        const CLAIM_TEMPLATES = {
+            'action': {
+                name: 'Action Claim',
+                description: 'Someone does something',
+                slots: [
+                    { key: 'who', label: 'who?', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'does', label: 'does what?', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'what', label: 'what/to whom?', required: false, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'when', label: 'when?', required: false, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] }
+                ]
+            },
+            'comparison': {
+                name: 'Comparison Claim',
+                description: 'A relates to B somehow',
+                slots: [
+                    { key: 'entityA', label: 'entity A', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'relation', label: 'relation', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'entityB', label: 'entity B', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] }
+                ]
+            },
+            'measurement': {
+                name: 'Measurement Claim',
+                description: 'Measures X with value Y',
+                slots: [
+                    { key: 'measures', label: 'measures what?', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'value', label: 'value', required: true, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] },
+                    { key: 'uncertainty', label: 'uncertainty/error', required: false, allowedTypes: ['concept', 'claim', 'evidence', 'method', 'result'] }
+                ]
+            },
+            'freeform': {
+                name: 'Freeform Claim',
+                description: 'No predefined structure',
+                slots: []
+            }
+        };
 
         // Initialize Cytoscape
         const cy = cytoscape({
@@ -697,6 +894,12 @@
         const searchPanelClose = document.getElementById('search-panel-close');
         const searchInput = document.getElementById('search-input');
 
+        // Connector guide panel elements
+        const connectorGuide = document.getElementById('connector-guide');
+        const connectorGuideContent = document.getElementById('connector-guide-content');
+        const connectorGuideClose = document.getElementById('connector-guide-close');
+        const connectorGuideTitle = document.getElementById('connector-guide-title');
+
         // Initialize legend
         function initializeLegend() {
             const nodeLegend = document.getElementById('node-legend');
@@ -787,6 +990,33 @@
                     contextMenu.appendChild(item);
                 });
 
+                // Add template selector for claim nodes
+                if (target.data('type') === 'claim') {
+                    const templateSeparator = document.createElement('div');
+                    templateSeparator.className = 'context-menu-header';
+                    templateSeparator.textContent = 'Set Template';
+                    contextMenu.appendChild(templateSeparator);
+
+                    Object.keys(CLAIM_TEMPLATES).forEach((templateKey) => {
+                        const template = CLAIM_TEMPLATES[templateKey];
+                        const item = document.createElement('div');
+                        item.className = 'context-menu-item';
+                        item.textContent = template.name;
+
+                        // Mark current template
+                        if (target.data('template') === templateKey) {
+                            item.textContent = '✓ ' + template.name;
+                            item.style.fontWeight = 'bold';
+                        }
+
+                        item.onclick = () => {
+                            setClaimTemplate(target, templateKey);
+                            hideContextMenu();
+                        };
+                        contextMenu.appendChild(item);
+                    });
+                }
+
                 // Add separator
                 const separator = document.createElement('div');
                 separator.className = 'context-menu-header';
@@ -801,6 +1031,7 @@
                 deleteItem.onclick = () => {
                     cy.remove(target);
                     hideInfoPanel();
+                    hideConnectorGuide();
                     hideContextMenu();
                 };
                 contextMenu.appendChild(deleteItem);
@@ -885,16 +1116,24 @@
         }
 
         // Add node at position
-        function addNode(x, y) {
+        function addNode(x, y, nodeType = 'concept') {
             const nodeId = getNextNodeId();
+            const nodeData = {
+                id: nodeId,
+                label: 'New Node',
+                type: nodeType,
+                content: ''  // Markdown content
+            };
+
+            // Add template fields for claim nodes
+            if (nodeType === 'claim') {
+                nodeData.template = 'freeform';
+                nodeData.connectors = {};
+            }
+
             cy.add({
                 group: 'nodes',
-                data: {
-                    id: nodeId,
-                    label: 'New Node',
-                    type: 'concept',
-                    content: ''  // Markdown content
-                },
+                data: nodeData,
                 position: { x: x, y: y }
             });
             return nodeId;
@@ -1081,11 +1320,29 @@
                 const outgoingEdges = element.connectedEdges('[source = "' + element.id() + '"]');
                 const incomingEdges = element.connectedEdges('[target = "' + element.id() + '"]');
 
-                infoPanelContent.innerHTML = `
+                // Build info panel HTML
+                let infoPanelHTML = `
                     <div class="info-section">
                         <div class="info-label">Type</div>
                         <div class="info-value">${NODE_TYPES[nodeType].label}</div>
                     </div>
+                `;
+
+                // Add template information for claim nodes
+                if (nodeType === 'claim') {
+                    const templateKey = element.data('template') || 'freeform';
+                    const template = CLAIM_TEMPLATES[templateKey];
+                    const templateName = template ? template.name : 'Freeform';
+
+                    infoPanelHTML += `
+                        <div class="info-section">
+                            <div class="info-label">Template</div>
+                            <div class="info-value">${templateName}</div>
+                        </div>
+                    `;
+                }
+
+                infoPanelHTML += `
                     <div class="info-section">
                         <div class="info-label">Label</div>
                         <div class="info-value editable" id="info-label-value">${nodeLabel}</div>
@@ -1103,6 +1360,8 @@
                         <div class="connection-list" id="incoming-connections"></div>
                     </div>
                 `;
+
+                infoPanelContent.innerHTML = infoPanelHTML;
 
                 // Add outgoing connections
                 const outgoingList = document.getElementById('outgoing-connections');
@@ -1231,6 +1490,147 @@
         // Hide info panel
         function hideInfoPanel() {
             infoPanel.classList.remove('active');
+        }
+
+        // Set claim template
+        function setClaimTemplate(node, templateKey) {
+            node.data('template', templateKey);
+            // Reset connectors when template changes
+            node.data('connectors', {});
+
+            // Update connector guide if this node is selected
+            if (node.selected()) {
+                showConnectorGuide(node);
+            }
+        }
+
+        // Show connector guide for templated claim nodes
+        function showConnectorGuide(node) {
+            if (!node || node.data('type') !== 'claim') {
+                connectorGuide.classList.remove('active');
+                return;
+            }
+
+            const templateKey = node.data('template') || 'freeform';
+            const template = CLAIM_TEMPLATES[templateKey];
+
+            if (!template || template.slots.length === 0) {
+                connectorGuide.classList.remove('active');
+                return;
+            }
+
+            connectorGuideTitle.textContent = `Connectors: ${template.name}`;
+            connectorGuideContent.innerHTML = '';
+
+            // Add template description
+            const templateDesc = document.createElement('div');
+            templateDesc.className = 'connector-guide-template';
+            templateDesc.textContent = template.description;
+            connectorGuideContent.appendChild(templateDesc);
+
+            // Get connectors
+            const connectors = node.data('connectors') || {};
+
+            // Get all incoming edges to this node
+            const incomingEdges = node.connectedEdges('[target = "' + node.id() + '"]');
+
+            // Add slot UI for each template slot
+            template.slots.forEach(slot => {
+                const slotDiv = document.createElement('div');
+                slotDiv.className = 'connector-slot';
+                if (slot.required) {
+                    slotDiv.classList.add('required');
+                } else {
+                    slotDiv.classList.add('optional');
+                }
+
+                // Check if slot is filled
+                const connectedNodeId = connectors[slot.key];
+                let isConnected = false;
+                let connectedNode = null;
+
+                if (connectedNodeId) {
+                    connectedNode = cy.getElementById(connectedNodeId);
+                    if (connectedNode.length > 0) {
+                        isConnected = true;
+                        slotDiv.classList.add('filled');
+                    }
+                }
+
+                // Header with label and required/optional indicator
+                const header = document.createElement('div');
+                header.className = 'connector-slot-header';
+
+                const label = document.createElement('span');
+                label.className = 'connector-slot-label';
+                label.textContent = slot.label;
+
+                const indicator = document.createElement('span');
+                indicator.className = slot.required ? 'connector-slot-required' : 'connector-slot-optional';
+                indicator.textContent = slot.required ? 'required' : 'optional';
+
+                header.appendChild(label);
+                header.appendChild(indicator);
+                slotDiv.appendChild(header);
+
+                // Status
+                const status = document.createElement('div');
+                status.className = 'connector-slot-status';
+                if (isConnected) {
+                    status.classList.add('connected');
+                    status.textContent = `✓ Connected: ${connectedNode.data('label')} (${NODE_TYPES[connectedNode.data('type')].label})`;
+
+                    // Add click to navigate
+                    status.style.cursor = 'pointer';
+                    status.onclick = function() {
+                        cy.elements().unselect();
+                        connectedNode.select();
+                        cy.animate({
+                            center: { eles: connectedNode },
+                            zoom: cy.zoom()
+                        }, {
+                            duration: 300
+                        });
+                    };
+                } else {
+                    status.textContent = 'Not connected';
+                }
+                slotDiv.appendChild(status);
+
+                // Connect button
+                const button = document.createElement('button');
+                button.className = 'connector-slot-button';
+                button.textContent = isConnected ? 'Change Connection' : 'Connect Node';
+                button.onclick = function() {
+                    enterSlotConnectMode(node, slot.key, slot.label);
+                };
+                slotDiv.appendChild(button);
+
+                connectorGuideContent.appendChild(slotDiv);
+            });
+
+            connectorGuide.classList.add('active');
+        }
+
+        // Hide connector guide
+        function hideConnectorGuide() {
+            connectorGuide.classList.remove('active');
+        }
+
+        // Enter slot connection mode
+        let slotConnectMode = null;
+        function enterSlotConnectMode(claimNode, slotKey, slotLabel) {
+            slotConnectMode = {
+                claimNode: claimNode,
+                slotKey: slotKey,
+                slotLabel: slotLabel
+            };
+            showModeIndicator(`Slot Connection: Click a node to connect as "${slotLabel}"`, true);
+        }
+
+        function exitSlotConnectMode() {
+            slotConnectMode = null;
+            hideModeIndicator();
         }
 
         // Search functionality
@@ -1427,17 +1827,25 @@
             };
 
             cy.nodes().forEach(node => {
-                graphData.nodes.push({
+                const nodeData = {
                     id: node.data('id'),
                     label: node.data('label'),
                     type: node.data('type'),
                     content: node.data('content') || '',
                     position: node.position()
-                });
+                };
+
+                // Add template fields for claim nodes
+                if (node.data('type') === 'claim') {
+                    nodeData.template = node.data('template') || 'freeform';
+                    nodeData.connectors = node.data('connectors') || {};
+                }
+
+                graphData.nodes.push(nodeData);
             });
 
             cy.edges().forEach(edge => {
-                graphData.edges.push({
+                const edgeData = {
                     id: edge.data('id'),
                     source: edge.data('source'),
                     target: edge.data('target'),
@@ -1445,7 +1853,14 @@
                     type: edge.data('type'),
                     content: edge.data('content') || '',
                     labelMatchesType: edge.data('labelMatchesType') || false
-                });
+                };
+
+                // Add slot field if it exists (for template connectors)
+                if (edge.data('slot')) {
+                    edgeData.slot = edge.data('slot');
+                }
+
+                graphData.edges.push(edgeData);
             });
 
             const jsonString = JSON.stringify(graphData, null, 2);
@@ -1473,14 +1888,22 @@
                 // Add nodes
                 if (graphData.nodes) {
                     graphData.nodes.forEach(nodeData => {
+                        const cyNodeData = {
+                            id: nodeData.id,
+                            label: nodeData.label,
+                            type: nodeData.type || 'concept',
+                            content: nodeData.content || ''
+                        };
+
+                        // Add template fields for claim nodes
+                        if (nodeData.type === 'claim') {
+                            cyNodeData.template = nodeData.template || 'freeform';
+                            cyNodeData.connectors = nodeData.connectors || {};
+                        }
+
                         cy.add({
                             group: 'nodes',
-                            data: {
-                                id: nodeData.id,
-                                label: nodeData.label,
-                                type: nodeData.type || 'concept',
-                                content: nodeData.content || ''
-                            },
+                            data: cyNodeData,
                             position: nodeData.position || { x: 100, y: 100 }
                         });
 
@@ -1502,17 +1925,24 @@
                             ? edgeData.labelMatchesType
                             : (edgeLabel === EDGE_TYPES[edgeType].label);
 
+                        const cyEdgeData = {
+                            id: edgeData.id,
+                            source: edgeData.source,
+                            target: edgeData.target,
+                            label: edgeLabel,
+                            type: edgeType,
+                            content: edgeData.content || '',
+                            labelMatchesType: labelMatchesType
+                        };
+
+                        // Add slot field if it exists
+                        if (edgeData.slot) {
+                            cyEdgeData.slot = edgeData.slot;
+                        }
+
                         cy.add({
                             group: 'edges',
-                            data: {
-                                id: edgeData.id,
-                                source: edgeData.source,
-                                target: edgeData.target,
-                                label: edgeLabel,
-                                type: edgeType,
-                                content: edgeData.content || '',
-                                labelMatchesType: labelMatchesType
-                            }
+                            data: cyEdgeData
                         });
 
                         // Update counter to avoid ID conflicts
@@ -1551,6 +1981,39 @@
                     addEdge(edgeModeSourceNode.id(), targetNode.id());
                 }
                 exitEdgeMode();
+            }
+            // Check if clicked on node while in slot connection mode
+            else if (event.target.isNode() && slotConnectMode) {
+                const targetNode = event.target;
+                const claimNode = slotConnectMode.claimNode;
+
+                // Don't allow connecting to itself
+                if (targetNode.id() !== claimNode.id()) {
+                    // Create edge from target to claim node with slot information
+                    const edgeId = getNextEdgeId();
+                    cy.add({
+                        group: 'edges',
+                        data: {
+                            id: edgeId,
+                            source: targetNode.id(),
+                            target: claimNode.id(),
+                            label: slotConnectMode.slotLabel,
+                            type: 'supports',
+                            content: '',
+                            slot: slotConnectMode.slotKey
+                        }
+                    });
+
+                    // Update connectors
+                    const connectors = claimNode.data('connectors') || {};
+                    connectors[slotConnectMode.slotKey] = targetNode.id();
+                    claimNode.data('connectors', connectors);
+
+                    // Refresh connector guide
+                    showConnectorGuide(claimNode);
+                }
+
+                exitSlotConnectMode();
             }
         });
 
@@ -1599,6 +2062,13 @@
         cy.on('select', 'node, edge', function(event) {
             const element = event.target;
             showInfoPanel(element);
+
+            // Show connector guide for claim nodes with templates
+            if (element.isNode() && element.data('type') === 'claim') {
+                showConnectorGuide(element);
+            } else {
+                hideConnectorGuide();
+            }
         });
 
         // Hide info panel when unselecting
@@ -1606,6 +2076,7 @@
             const selected = cy.$(':selected');
             if (selected.length === 0) {
                 hideInfoPanel();
+                hideConnectorGuide();
             }
         });
 
@@ -1613,6 +2084,11 @@
         infoPanelClose.addEventListener('click', function() {
             hideInfoPanel();
             cy.$(':selected').unselect();
+        });
+
+        // Connector guide close button
+        connectorGuideClose.addEventListener('click', function() {
+            hideConnectorGuide();
         });
 
         // Keyboard shortcuts
@@ -1647,10 +2123,12 @@
                 }
             }
 
-            // Escape key - Exit edge mode
+            // Escape key - Exit edge mode or slot connect mode
             if (event.key === 'Escape') {
                 if (edgeMode) {
                     exitEdgeMode();
+                } else if (slotConnectMode) {
+                    exitSlotConnectMode();
                 }
             }
 
