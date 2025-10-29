@@ -343,6 +343,103 @@
         .connection-item.outgoing {
             border-left-color: #e74c3c;
         }
+
+        /* Search panel */
+        #search-panel {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            width: 300px;
+            max-height: calc(100vh - 350px);
+            background: white;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+        }
+
+        #search-panel.active {
+            display: flex;
+        }
+
+        .search-panel-header {
+            background: #3498db;
+            color: white;
+            padding: 12px;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .search-panel-close {
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        .search-panel-close:hover {
+            opacity: 0.8;
+        }
+
+        .search-panel-content {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .search-result-item {
+            padding: 8px;
+            margin: 4px 0;
+            background: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+            border-left: 3px solid #3498db;
+            transition: background 0.2s;
+        }
+
+        .search-result-item:hover {
+            background: #e8ecef;
+        }
+
+        .search-result-item.node-result {
+            border-left-color: #2ecc71;
+        }
+
+        .search-result-item.edge-result {
+            border-left-color: #e74c3c;
+        }
+
+        .search-result-label {
+            font-weight: bold;
+            font-size: 13px;
+            color: #2c3e50;
+        }
+
+        .search-result-type {
+            font-size: 11px;
+            color: #7f8c8d;
+            margin-top: 2px;
+        }
+
+        .search-result-content {
+            font-size: 11px;
+            color: #555;
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        .search-no-results {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+            font-size: 13px;
+        }
     </style>
 </head>
 <body>
@@ -350,6 +447,8 @@
         <h1>L Language - Interactive Graph Editor</h1>
         <div id="controls">
             <button id="add-node-btn">Add Node (N)</button>
+            <button id="reset-view-btn">Reset View</button>
+            <input type="text" id="search-input" placeholder="Search nodes and edges..." style="width: 250px; padding: 0.5rem; border: 1px solid #bdc3c7; border-radius: 4px;">
             <button id="save-btn">Save Graph (Ctrl+S)</button>
             <button id="load-btn">Load Graph</button>
             <input type="file" id="file-input" accept=".json">
@@ -362,6 +461,13 @@
         <input type="text" id="inline-editor" />
         <div id="cy"></div>
         <div id="context-menu" class="context-menu"></div>
+        <div id="search-panel">
+            <div class="search-panel-header">
+                <span id="search-panel-title">Search Results</span>
+                <span class="search-panel-close" id="search-panel-close">&times;</span>
+            </div>
+            <div class="search-panel-content" id="search-panel-content"></div>
+        </div>
         <div id="info-panel">
             <div class="info-panel-header">
                 <span id="info-panel-title">Info</span>
@@ -383,9 +489,9 @@
     </div>
 
     <div id="instructions">
-        <strong>Node Operations:</strong> Click empty space or press 'N' to add node | Click to select | Double-click to edit label | Delete key to remove | Press 1-5 to change type |
+        <strong>Node Operations:</strong> Double-click empty space or press 'N' to add node | Click to select | Double-click to edit label | Delete key to remove | Press 1-5 to change type |
         <strong>Edge Operations:</strong> Select node + press 'E' + click target to add edge | Double-click edge to edit label | Press T to cycle type | Delete key to remove edge |
-        <strong>Context Menu:</strong> Right-click node or edge to change type
+        <strong>Context Menu:</strong> Right-click node or edge to change type or delete | <strong>Search:</strong> Use search bar to find nodes/edges by label, content, or type
     </div>
 
     <script>
@@ -584,6 +690,12 @@
         const infoPanelTitle = document.getElementById('info-panel-title');
         const infoPanelContent = document.getElementById('info-panel-content');
         const infoPanelClose = document.getElementById('info-panel-close');
+
+        // Search panel elements
+        const searchPanel = document.getElementById('search-panel');
+        const searchPanelContent = document.getElementById('search-panel-content');
+        const searchPanelClose = document.getElementById('search-panel-close');
+        const searchInput = document.getElementById('search-input');
 
         // Initialize legend
         function initializeLegend() {
@@ -1121,6 +1233,163 @@
             infoPanel.classList.remove('active');
         }
 
+        // Search functionality
+        function performSearch(query) {
+            if (!query || query.trim() === '') {
+                searchPanel.classList.remove('active');
+                return;
+            }
+
+            const lowerQuery = query.toLowerCase().trim();
+            const results = [];
+
+            // Search nodes
+            cy.nodes().forEach(node => {
+                const label = (node.data('label') || '').toLowerCase();
+                const content = (node.data('content') || '').toLowerCase();
+                const type = (node.data('type') || '').toLowerCase();
+                const typeName = NODE_TYPES[node.data('type')]?.label.toLowerCase() || '';
+
+                if (label.includes(lowerQuery) ||
+                    content.includes(lowerQuery) ||
+                    type.includes(lowerQuery) ||
+                    typeName.includes(lowerQuery)) {
+                    results.push({
+                        element: node,
+                        type: 'node',
+                        label: node.data('label'),
+                        nodeType: NODE_TYPES[node.data('type')]?.label || 'Unknown',
+                        content: node.data('content') || ''
+                    });
+                }
+            });
+
+            // Search edges
+            cy.edges().forEach(edge => {
+                const label = (edge.data('label') || '').toLowerCase();
+                const content = (edge.data('content') || '').toLowerCase();
+                const type = (edge.data('type') || '').toLowerCase();
+                const typeName = EDGE_TYPES[edge.data('type')]?.label.toLowerCase() || '';
+
+                if (label.includes(lowerQuery) ||
+                    content.includes(lowerQuery) ||
+                    type.includes(lowerQuery) ||
+                    typeName.includes(lowerQuery)) {
+                    const source = edge.source();
+                    const target = edge.target();
+                    results.push({
+                        element: edge,
+                        type: 'edge',
+                        label: edge.data('label'),
+                        edgeType: EDGE_TYPES[edge.data('type')]?.label || 'Unknown',
+                        content: edge.data('content') || '',
+                        sourceLabel: source.data('label'),
+                        targetLabel: target.data('label')
+                    });
+                }
+            });
+
+            // Display results
+            displaySearchResults(results, lowerQuery);
+        }
+
+        function displaySearchResults(results, query) {
+            searchPanelContent.innerHTML = '';
+
+            if (results.length === 0) {
+                searchPanelContent.innerHTML = '<div class="search-no-results">No results found for "' + query + '"</div>';
+                searchPanel.classList.add('active');
+                return;
+            }
+
+            const titleElement = document.getElementById('search-panel-title');
+            titleElement.textContent = `Search Results (${results.length})`;
+
+            results.forEach(result => {
+                const item = document.createElement('div');
+                item.className = 'search-result-item';
+
+                if (result.type === 'node') {
+                    item.classList.add('node-result');
+
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'search-result-label';
+                    labelDiv.textContent = result.label;
+
+                    const typeDiv = document.createElement('div');
+                    typeDiv.className = 'search-result-type';
+                    typeDiv.textContent = 'Node: ' + result.nodeType;
+
+                    item.appendChild(labelDiv);
+                    item.appendChild(typeDiv);
+
+                    if (result.content) {
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'search-result-content';
+                        contentDiv.textContent = result.content.substring(0, 60) + (result.content.length > 60 ? '...' : '');
+                        item.appendChild(contentDiv);
+                    }
+                } else {
+                    item.classList.add('edge-result');
+
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'search-result-label';
+                    labelDiv.textContent = result.label;
+
+                    const typeDiv = document.createElement('div');
+                    typeDiv.className = 'search-result-type';
+                    typeDiv.textContent = `Edge: ${result.sourceLabel} → ${result.targetLabel}`;
+
+                    item.appendChild(labelDiv);
+                    item.appendChild(typeDiv);
+
+                    if (result.content) {
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'search-result-content';
+                        contentDiv.textContent = result.content.substring(0, 60) + (result.content.length > 60 ? '...' : '');
+                        item.appendChild(contentDiv);
+                    }
+                }
+
+                // Add click handler to navigate to element
+                item.onclick = function() {
+                    cy.elements().unselect();
+                    result.element.select();
+                    cy.animate({
+                        center: { eles: result.element },
+                        zoom: Math.max(cy.zoom(), 1.0)
+                    }, {
+                        duration: 300
+                    });
+                };
+
+                searchPanelContent.appendChild(item);
+            });
+
+            searchPanel.classList.add('active');
+        }
+
+        function hideSearchPanel() {
+            searchPanel.classList.remove('active');
+            searchInput.value = '';
+        }
+
+        function resetView() {
+            const elements = cy.elements();
+            if (elements.length > 0) {
+                cy.animate({
+                    fit: { eles: elements, padding: 50 },
+                    duration: 300
+                });
+            } else {
+                cy.animate({
+                    zoom: 1,
+                    pan: { x: 0, y: 0 },
+                    duration: 300
+                });
+            }
+        }
+
         // Delete selected elements
         function deleteSelected() {
             const selected = cy.$(':selected');
@@ -1266,15 +1535,11 @@
 
         // Event Listeners
 
-        // Click on canvas (for adding nodes or creating edges)
+        // Single click on canvas (for edge mode only)
         cy.on('tap', function(event) {
             // Check if clicked on background
             if (event.target === cy) {
-                if (!edgeMode) {
-                    // Add new node at click position
-                    const pos = event.position;
-                    addNode(pos.x, pos.y);
-                } else {
+                if (edgeMode) {
                     // Exit edge mode if clicking on background
                     exitEdgeMode();
                 }
@@ -1286,6 +1551,15 @@
                     addEdge(edgeModeSourceNode.id(), targetNode.id());
                 }
                 exitEdgeMode();
+            }
+        });
+
+        // Double-click on canvas to add node
+        cy.on('dbltap', function(event) {
+            // Check if clicked on background (not on a node or edge)
+            if (event.target === cy) {
+                const pos = event.position;
+                addNode(pos.x, pos.y);
             }
         });
 
@@ -1425,6 +1699,18 @@
                 (center.x - modelPosition.x) / zoom,
                 (center.y - modelPosition.y) / zoom
             );
+        });
+
+        document.getElementById('reset-view-btn').addEventListener('click', resetView);
+
+        // Search input event listener
+        searchInput.addEventListener('input', function(e) {
+            performSearch(e.target.value);
+        });
+
+        // Search panel close button
+        searchPanelClose.addEventListener('click', function() {
+            hideSearchPanel();
         });
 
         document.getElementById('save-btn').addEventListener('click', saveGraph);
